@@ -111,7 +111,7 @@ For production, run `argus-redact serve` with `ARGUS_API_KEY` set (drop the `--i
 
 ## Known limitations (v0.1)
 
-- **OpenAI Chat Completions JSON only.** The plugin assumes `{messages: [{role, content}], ...}` on the request and `{choices: [{message: {content}}], ...}` on the response. Non-OpenAI-compatible vendor APIs (e.g. `POST /v1/messages`, Google Vertex) are not handled in v0.1.
+- **OpenAI Chat Completions JSON only.** The plugin assumes `{messages: [{role, content}], ...}` on the request and `{choices: [{message: {content}}], ...}` on the response. The Anthropic Messages API, Google Vertex, and other vendor shapes are not handled in v0.1.
 - **No streaming.** Requests with `stream: true` are rejected with HTTP 400. argus-redact's streaming primitive requires complete logical units per chunk, while LLM SSE delivers token-level deltas where entities span chunk boundaries; correct streaming support is on the v1 roadmap.
 - **One HTTP call per message.** v0.1 calls `/redact` once per `messages[].content`. A typical chat request has 1–5 messages, so this is acceptable in `mode=fast` (<1 ms per call), but a batch endpoint on the argus-redact side is on the v1 wishlist.
 - **Single-form output.** The HTTP `/redact` endpoint returns one redacted text plus a key. argus-redact's Python `redact_pseudonym_llm()` API exposes three forms (`audit_text` / `downstream_text` / `display_text`) sharing one key; the gateway use case only needs the single form, so this is by design.
