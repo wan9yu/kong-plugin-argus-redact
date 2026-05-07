@@ -1,0 +1,52 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: unit + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pull kong base image
+        run: docker pull kong:3.7.1-ubuntu
+
+      - name: run busted via the shim (kong base image)
+        run: bash scripts/run-busted.sh
+
+      - name: lint rockspec
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -w /work \
+            --user root \
+            kong:3.7.1-ubuntu \
+            luarocks lint argus-redact-bridge-0.1.0-1.rockspec
+
+  e2e:
+    name: e2e (docker compose)
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: free runner disk
+        run: |
+          df -h /
+          docker system prune -af --volumes || true
+          df -h /
+
+      - name: run e2e
+        run: bash docker/test/run.sh
+
+      - name: dump kong logs on failure
+        if: failure()
+        run: |
+          cd docker
+          docker compose logs --no-color kong || true
+          docker compose logs --no-color argus-redact || true
+          docker compose logs --no-color mock-llm || true
