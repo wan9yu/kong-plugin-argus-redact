@@ -6,7 +6,7 @@ local kong = kong
 local ngx = ngx
 
 local Plugin = {
-  PRIORITY = 1100, -- higher = earlier in access phase: runs before ai-proxy (799), after request-transformer-class plugins (900+)
+  PRIORITY = 1100, -- higher value runs earlier in the access phase; tune relative to other body-aware plugins in your priority chain
   VERSION = "0.1.0",
 }
 
