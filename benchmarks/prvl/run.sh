@@ -46,10 +46,13 @@ sleep 15
 run_through_stack "$SCRIPT_DIR/payloads.jsonl" "http://localhost:18000" "$RESULTS_DIR/argus"
 docker compose -f "$REPO_ROOT/docker/docker-compose.yml" down -v
 
-# === Stack B: ai-prompt-guard ===
-# TODO(follow-up): build a parallel docker-compose with `ai-prompt-guard` swapped
-# in. The plugin needs a hand-written regex list to match PII categories -- that's
-# part of the benchmark's documented disadvantage (config burden).
-echo "==> Stack B (ai-prompt-guard) not yet wired -- see README.md"
+# === Stack B: alternative PII handling baseline ===
+# TODO(follow-up): wire a parallel docker-compose stack with a baseline PII
+# handler (e.g., a regex-based blocking pattern, or a one-way redact-and-strip
+# pattern) so the methodology can be reproduced against a concrete baseline.
+# The choice of baseline is left to whoever runs the benchmark; we keep the
+# methodology product-agnostic so the same harness can compare any number
+# of strategies.
+echo "==> Stack B (alternative baseline) not yet wired — see README.md"
 
 echo "==> Done. See $RESULTS_DIR/argus/scores.jsonl"
