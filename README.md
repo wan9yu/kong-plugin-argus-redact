@@ -1,2 +1,130 @@
 # kong-plugin-argus-redact
-argus-redact's PII engine plugin for Kong
+
+A Kong Gateway plugin that PII-redacts OpenAI-compatible Chat Completions traffic through [argus-redact](https://github.com/wan9yu/argus-redact). Real PII never reaches the upstream LLM, and the original PII is transparently restored on the response back to the client.
+
+## Architecture
+
+```
+   ┌────────┐    POST /v1/chat/completions          ┌────────────────────────┐
+   │ Client │ ─────────────────────────────────────▶│ Kong Gateway           │
+   └────────┘    request body contains real PII     │  argus-redact-bridge   │
+        ▲                                           │  (this plugin)         │
+        │                                           └──────────┬─────────────┘
+        │                                            access    │  POST /redact
+        │                                            phase     │  one call per
+        │                                                      ▼  messages[i]
+        │                                           ┌──────────────────────┐
+        │                                           │ argus-redact serve   │
+        │                                           │  /redact endpoint    │
+        │                                           └──────────┬───────────┘
+        │                                                      │ returns
+        │                                                      │ {redacted, key}
+        │                                                      ▼
+        │                                           ┌──────────────────────┐
+        │                                           │ kong.ctx.plugin      │
+        │                                           │  stash merged key    │
+        │                                           └──────────┬───────────┘
+        │                                                      │
+        │           request body now contains                  ▼
+        │           realistic pseudonymized values   ┌──────────────────────┐
+        │           — never the real PII            ▶│ Upstream LLM         │
+        │                                            │ (OpenAI / mock)      │
+        │                                            └──────────┬───────────┘
+        │                                                       │
+        │                                            body_      ▼
+        │                                            filter    ┌────────────────┐
+        │                                            phase     │ local restore  │
+        │                                                      │ via key dict   │
+        │                                                      │ (gsub)         │
+        │                                                      └────────┬───────┘
+        │           response with original PII                          │
+        └────────────────────────────────────────────────────────────────┘
+```
+
+**Request flow (access phase).** The plugin extracts each `messages[].content` string from the request body, calls `argus-redact serve` `/redact` once per message (v0.1 — see Limitations), replaces the content with the realistic-looking pseudonymized form (default profile `pseudonym-llm`), forwards the modified request upstream, and stashes the merged per-request `{placeholder → original}` key map in `kong.ctx.plugin`.
+
+**Response flow (body_filter phase).** The plugin buffers the upstream response until EOF, parses each `choices[].message.content`, and restores the original PII via local string substitution against the key map. The substitution is performed in-process because OpenResty's `body_filter_by_lua` phase forbids cosocket creation, so an outbound HTTP `/restore` call is not possible from this phase.
+
+## Quick start (Docker)
+
+```bash
+git clone https://github.com/wan9yu/kong-plugin-argus-redact
+cd kong-plugin-argus-redact
+
+# Bring up the demo stack: Kong Gateway + argus-redact + mock LLM
+docker compose -f docker/docker-compose.yml up -d --build
+
+# Send a request through Kong containing real PII (Chinese example here
+# because argus-redact's strongest language pack is zh; the plugin is
+# language-neutral and works the same way for en/ja/ko/de/uk/in/br).
+curl -s -X POST http://localhost:18000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-4","messages":[
+        {"role":"user","content":"我叫王五，手机13812345678"}
+      ]}' | jq
+
+# Client receives the original PII back, restored:
+# {"choices":[{"message":{"content":"echo: 我叫王五，手机13812345678"}}]}
+
+# What did the upstream LLM actually see? Pseudonymized data only:
+docker compose -f docker/docker-compose.yml logs mock-llm | grep MOCK_LLM_REQUEST_BODY | tail -1
+# MOCK_LLM_REQUEST_BODY: {"messages":[{"role":"user","content":"我叫傻大姐，手机19999173649"}], ...}
+```
+
+## Install (Kong Gateway + luarocks)
+
+```bash
+luarocks install argus-redact-bridge
+
+# Tell Kong to load the plugin
+export KONG_PLUGINS=bundled,argus-redact-bridge
+```
+
+Then enable the plugin on a Service or Route. DB-less example:
+
+```yaml
+# kong.yml
+plugins:
+  - name: argus-redact-bridge
+    config:
+      argus_url: http://argus-redact:8000
+      argus_api_key: "{vault://env/ARGUS_API_KEY}"
+      lang: zh
+      mode: fast
+      profile: pseudonym-llm
+      on_error: closed
+```
+
+For production, run `argus-redact serve` with `ARGUS_API_KEY` set (drop the `--insecure` flag the demo stack uses), and reference the same key in the plugin config via Kong's vault syntax above. The demo `docker/docker-compose.yml` runs argus-redact with `--insecure` for self-contained reproducibility — that is not a recommended production configuration.
+
+## Configuration
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `argus_url` | string (required) | `http://argus-redact:8000` | Base URL of the argus-redact HTTP server. |
+| `argus_api_key` | string (referenceable) | — | Bearer token. Must match `ARGUS_API_KEY` on the argus-redact server. Use Kong vault references in production. |
+| `lang` | string | `zh` | argus-redact language pack (`zh`, `en`, `ja`, `ko`, `de`, `uk`, `in`, `br`). |
+| `mode` | enum | `fast` | argus-redact detection mode (`fast`, `ner`, `auto`). Only `fast` is inline-suitable (<1 ms). `ner` and `auto` add latency unsuitable for the request path; expose them for completeness. |
+| `profile` | string | `pseudonym-llm` | argus-redact compliance profile. `pseudonym-llm` emits realistic-looking faked values that preserve LLM-reasoning quality. |
+| `timeout_ms` | integer | `2000` | Per-call timeout for `/redact`. Bounded to `[100, 60000]`. |
+| `on_error` | enum | `closed` | Behavior when argus-redact is unreachable during the access phase. `closed` (default): return 503; unredacted PII never reaches the LLM. `open`: log a warning and pass the original request through unmodified. |
+
+## Known limitations (v0.1)
+
+- **OpenAI Chat Completions JSON only.** The plugin assumes `{messages: [{role, content}], ...}` on the request and `{choices: [{message: {content}}], ...}` on the response. Non-OpenAI-compatible vendor APIs (e.g. `POST /v1/messages`, Google Vertex) are not handled in v0.1.
+- **No streaming.** Requests with `stream: true` are rejected with HTTP 400. argus-redact's streaming primitive requires complete logical units per chunk, while LLM SSE delivers token-level deltas where entities span chunk boundaries; correct streaming support is on the v1 roadmap.
+- **One HTTP call per message.** v0.1 calls `/redact` once per `messages[].content`. A typical chat request has 1–5 messages, so this is acceptable in `mode=fast` (<1 ms per call), but a batch endpoint on the argus-redact side is on the v1 wishlist.
+- **Single-form output.** The HTTP `/redact` endpoint returns one redacted text plus a key. argus-redact's Python `redact_pseudonym_llm()` API exposes three forms (`audit_text` / `downstream_text` / `display_text`) sharing one key; the gateway use case only needs the single form, so this is by design.
+- **Local-only restore (no cross-language aliases).** Restore runs as a local string substitution against the key map returned by `/redact`. This is required because OpenResty's `body_filter_by_lua` phase forbids `ngx.socket.tcp()`, so the plugin cannot call `/restore` HTTP from the response path. Concretely: argus-redact's cross-language alias feature (e.g., the LLM rewrites Chinese `张三` as English `Zhang San` and `restore` recovers the alias via `result.aliases`) is **not** applied in v0.1. If the LLM produces a verbatim copy of the placeholder, restore works; if it transforms or translates the placeholder, the transformed form passes through unrestored. v1 will explore `ngx.timer.at` to schedule the `/restore` call out of the body_filter phase.
+
+## Comparison with Kong's existing AI plugins
+
+`argus-redact-bridge` is **reversible**: the client receives the original PII restored. Kong's `ai-prompt-guard` (regex-based prompt blocking) and `ai-azure-content-safety` (Azure-hosted moderation) detect or block sensitive content but do not restore it. See [`benchmarks/prvl-vs-ai-prompt-guard/`](benchmarks/prvl-vs-ai-prompt-guard/README.md) for the methodology used to compare them.
+
+## Status
+
+v0.1 — minimum viable. APIs may change. Not yet published to luarocks.org.
+
+## License
+
+[Apache 2.0](LICENSE)
