@@ -30,6 +30,11 @@ describe("argus-redact-bridge schema", function()
     assert.matches("^https?://", f.default)
   end)
 
+  it("pins the argus_url regex so it rejects schemes without a host", function()
+    local f = find_field("argus_url")
+    assert.equals("^https?://%S+", f.match)
+  end)
+
   it("marks argus_api_key as referenceable so vault references resolve at runtime", function()
     local f = find_field("argus_api_key")
     assert.is_table(f)

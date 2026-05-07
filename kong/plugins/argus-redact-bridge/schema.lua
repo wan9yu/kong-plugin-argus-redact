@@ -9,7 +9,7 @@ return {
         fields = {
           { argus_url = { type = "string", required = true,
               default = "http://argus-redact:8000",
-              match = "^https?://" } },
+              match = "^https?://%S+" } },
           { argus_api_key = { type = "string", referenceable = true } },
           { lang = { type = "string", default = "zh" } },
           { mode = { type = "string", default = "fast",

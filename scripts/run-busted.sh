@@ -12,13 +12,14 @@ if [ "${#SPECS[@]}" -eq 0 ]; then
 fi
 
 docker run --rm \
-  -v "$REPO_ROOT:/work:rw" \
+  -v "$REPO_ROOT:/work:ro" \
   -w /work \
   --user root \
   kong:3.7.1-ubuntu \
   bash -c '
     set -e
     if ! command -v busted >/dev/null 2>&1; then
+      # root required for first-run apt-get install on Kong base image
       apt-get update -qq >/dev/null 2>&1
       apt-get install -y -qq lua-busted >/dev/null 2>&1
     fi
@@ -30,5 +31,5 @@ docker run --rm \
     esac
     export LUA_PATH="./?.lua;./?/init.lua;/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;;"
     export LUA_CPATH="/usr/lib/${DEB_ARCH}/lua/5.1/?.so;/usr/lib/${DEB_ARCH}/lua/5.1/?/?.so;;"
-    resty /usr/bin/busted '"${SPECS[*]}"'
-  '
+    resty /usr/bin/busted "$@"
+  ' -- "${SPECS[@]}"
