@@ -30,6 +30,23 @@ local function merge_keys(keys)
   return merged
 end
 
+-- Restore PII in text using the key dict (fake -> original) from the redact
+-- phase. This is a plain string substitution performed locally — no HTTP call
+-- is needed, which matters because ngx.socket.tcp() is forbidden in the
+-- body_filter phase.
+local function restore_with_key(text, key)
+  if not key or not text then
+    return text
+  end
+  local result = text
+  for fake, original in pairs(key) do
+    -- Use plain replacement (no pattern magic) so phone numbers / names with
+    -- special regex chars are handled safely.
+    result = result:gsub(fake:gsub("([^%w])", "%%%1"), original)
+  end
+  return result
+end
+
 function Plugin:access(conf)
   local body, err = kong.request.get_raw_body()
   if not body then
@@ -76,6 +93,15 @@ function Plugin:access(conf)
   kong.ctx.plugin.argus_active = true
 end
 
+-- Clear Content-Length so nginx uses chunked transfer after body_filter
+-- replaces the body with a different-length restored payload.
+function Plugin:header_filter(conf)
+  if not kong.ctx.plugin.argus_active then
+    return
+  end
+  kong.response.clear_header("Content-Length")
+end
+
 function Plugin:body_filter(conf)
   if not kong.ctx.plugin.argus_active then
     return
@@ -97,20 +123,12 @@ function Plugin:body_filter(conf)
     return
   end
 
-  local httpc = http.new()  -- separate from access-phase httpc; pool reuse handled by resty.http
+  -- Restore each message text using the key built during access. This is a
+  -- local string-substitution pass — no outbound HTTP call — which is
+  -- required because ngx.socket.tcp() is not allowed in body_filter.
   local restored_list = {}
   for i, text in ipairs(parsed.texts) do
-    local res, err = client.restore(httpc, conf, text, ctx.argus_key)
-    if not res then
-      kong.log.err("argus-redact /restore failed at choice " .. i .. ": " .. err
-        .. " — returning redacted (still safe) text to client")
-      -- partial restore: return the fully-redacted body rather than a mix of
-      -- restored and pseudonym text, which would be harder for callers to handle
-      ngx.arg[1] = full_body
-      ngx.arg[2] = true
-      return
-    end
-    restored_list[i] = res.restored
+    restored_list[i] = restore_with_key(text, ctx.argus_key)
   end
 
   local new_body = codec.inject_response(parsed, restored_list)

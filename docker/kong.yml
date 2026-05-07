@@ -13,7 +13,6 @@ services:
       - name: argus-redact-bridge
         config:
           argus_url: http://argus-redact:8000
-          argus_api_key: "${ARGUS_API_KEY}"
           lang: zh
           mode: fast
           profile: pseudonym-llm

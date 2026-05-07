@@ -3,7 +3,9 @@ services:
     build:
       context: ./argus-redact
     environment:
-      ARGUS_API_KEY: ${ARGUS_API_KEY:-test-key}
+      # Fixed demo salt so pseudonym-llm produces deterministic fakes.
+      # Not a secret — this is a self-contained local demo only.
+      ARGUS_REDACT_PSEUDONYM_SALT: demo-salt-for-local-dev
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
@@ -32,7 +34,6 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_LOG_LEVEL: info
-      ARGUS_API_KEY: ${ARGUS_API_KEY:-test-key}
     volumes:
       - ./kong.yml:/kong.yml:ro
     ports:

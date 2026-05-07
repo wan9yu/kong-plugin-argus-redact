@@ -11,4 +11,7 @@ RUN apt-get update \
 
 EXPOSE 8000
 
-CMD ["argus-redact", "serve", "--host", "0.0.0.0", "--port", "8000"]
+# --insecure disables Bearer auth for the self-contained demo. Production
+# deployments should drop --insecure and set ARGUS_API_KEY (matched by the
+# plugin's argus_api_key config); see README for examples.
+CMD ["argus-redact", "serve", "--host", "0.0.0.0", "--port", "8000", "--insecure"]
