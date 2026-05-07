@@ -1,0 +1,2 @@
+# judge.py uses only stdlib; this file exists so the benchmark dir
+# advertises its (currently zero) Python deps explicitly.

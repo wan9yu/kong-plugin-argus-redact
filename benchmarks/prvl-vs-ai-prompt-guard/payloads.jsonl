@@ -1,0 +1,5 @@
+{"id":"zh-001","lang":"zh","text":"我叫王五，手机13812345678","expected_pii":["王五","13812345678"]}
+{"id":"zh-002","lang":"zh","text":"身份证110101199003074610，地址北京市朝阳区","expected_pii":["110101199003074610"]}
+{"id":"en-001","lang":"en","text":"Hi, I'm John Doe, SSN 123-45-6789","expected_pii":["John Doe","123-45-6789"]}
+{"id":"en-002","lang":"en","text":"Email me at alice@example.com","expected_pii":["alice@example.com"]}
+{"id":"de-001","lang":"de","text":"Mein Name ist Max Mustermann, IBAN DE89370400440532013000","expected_pii":["Max Mustermann","DE89370400440532013000"]}
