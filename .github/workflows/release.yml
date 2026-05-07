@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  luarocks-upload:
+    name: upload rockspec to luarocks.org
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install luarocks
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends luarocks
+
+      - name: derive rockspec from tag
+        id: rockspec
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          ROCKSPEC="argus-redact-bridge-${VERSION}-1.rockspec"
+          if [ ! -f "$ROCKSPEC" ]; then
+            echo "ERROR: rockspec '$ROCKSPEC' not found in repo for tag '$GITHUB_REF'." >&2
+            echo "Available rockspecs:" >&2
+            ls -la *.rockspec >&2 || true
+            exit 1
+          fi
+          echo "Selected rockspec: $ROCKSPEC"
+          echo "name=$ROCKSPEC" >> "$GITHUB_OUTPUT"
+
+      - name: lint rockspec
+        run: luarocks lint "${{ steps.rockspec.outputs.name }}"
+
+      - name: upload to luarocks.org
+        env:
+          LUAROCKS_KEY: ${{ secrets.LUAROCKS_KEY }}
+        run: |
+          if [ -z "${LUAROCKS_KEY:-}" ]; then
+            echo "ERROR: LUAROCKS_KEY secret is empty." >&2
+            exit 1
+          fi
+          luarocks upload "${{ steps.rockspec.outputs.name }}" --api-key="$LUAROCKS_KEY"
