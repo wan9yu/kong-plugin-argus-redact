@@ -15,7 +15,13 @@ jobs:
       - name: install luarocks
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends luarocks
+          # luarocks needs a JSON library and HTTPS bindings to talk to
+          # the luarocks.org API; the bare `luarocks` apt package ships
+          # neither, so install lua-dkjson and lua-sec alongside.
+          sudo apt-get install -y --no-install-recommends \
+            luarocks \
+            lua-dkjson \
+            lua-sec
 
       - name: derive rockspec from tag
         id: rockspec
