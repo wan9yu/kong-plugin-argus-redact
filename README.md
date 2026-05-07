@@ -104,7 +104,7 @@ For production, run `argus-redact serve` with `ARGUS_API_KEY` set (drop the `--i
 | `argus_url` | string (required) | `http://argus-redact:8000` | Base URL of the argus-redact HTTP server. |
 | `argus_api_key` | string (referenceable) | — | Bearer token. Must match `ARGUS_API_KEY` on the argus-redact server. Use Kong vault references in production. |
 | `lang` | string | `zh` | argus-redact language pack (`zh`, `en`, `ja`, `ko`, `de`, `uk`, `in`, `br`). |
-| `mode` | enum | `fast` | argus-redact detection mode (`fast`, `ner`, `auto`). Only `fast` is inline-suitable (<1 ms). `ner` and `auto` add latency unsuitable for the request path; expose them for completeness. |
+| `mode` | enum | `fast` | argus-redact detection mode (`fast`, `ner`, `auto`). Only `fast` is suited to the request path; `ner` and `auto` are exposed for completeness but their latency profile makes them better suited to async / sidecar deployments than to inline gateway use. |
 | `profile` | string | `pseudonym-llm` | argus-redact compliance profile. `pseudonym-llm` emits realistic-looking faked values that preserve LLM-reasoning quality. |
 | `timeout_ms` | integer | `2000` | Per-call timeout for `/redact`. Bounded to `[100, 60000]`. |
 | `on_error` | enum | `closed` | Behavior when argus-redact is unreachable during the access phase. `closed` (default): return 503; unredacted PII never reaches the LLM. `open`: log a warning and pass the original request through unmodified. |
@@ -113,13 +113,34 @@ For production, run `argus-redact serve` with `ARGUS_API_KEY` set (drop the `--i
 
 - **OpenAI Chat Completions JSON only.** The plugin assumes `{messages: [{role, content}], ...}` on the request and `{choices: [{message: {content}}], ...}` on the response. The Anthropic Messages API, Google Vertex, and other vendor shapes are not handled in v0.1.
 - **No streaming.** Requests with `stream: true` are rejected with HTTP 400. argus-redact's streaming primitive requires complete logical units per chunk, while LLM SSE delivers token-level deltas where entities span chunk boundaries; correct streaming support is on the v1 roadmap.
-- **One HTTP call per message.** v0.1 calls `/redact` once per `messages[].content`. A typical chat request has 1–5 messages, so this is acceptable in `mode=fast` (<1 ms per call), but a batch endpoint on the argus-redact side is on the v1 wishlist.
+- **One HTTP call per message.** v0.1 calls `/redact` once per `messages[].content`. A typical chat request has 1–5 messages and the calls run sequentially in the access phase, so the per-request latency overhead is roughly `N × (network RTT + argus-redact /redact latency)`. A batch endpoint on the argus-redact side is on the v1 wishlist to collapse that to a single call.
 - **Single-form output.** The HTTP `/redact` endpoint returns one redacted text plus a key. argus-redact's Python `redact_pseudonym_llm()` API exposes three forms (`audit_text` / `downstream_text` / `display_text`) sharing one key; the gateway use case only needs the single form, so this is by design.
 - **Local-only restore (no cross-language aliases).** Restore runs as a local string substitution against the key map returned by `/redact`. This is required because OpenResty's `body_filter_by_lua` phase forbids `ngx.socket.tcp()`, so the plugin cannot call `/restore` HTTP from the response path. Concretely: argus-redact's cross-language alias feature (e.g., the LLM rewrites Chinese `张三` as English `Zhang San` and `restore` recovers the alias via `result.aliases`) is **not** applied in v0.1. If the LLM produces a verbatim copy of the placeholder, restore works; if it transforms or translates the placeholder, the transformed form passes through unrestored. v1 will explore `ngx.timer.at` to schedule the `/restore` call out of the body_filter phase.
 
-## Comparison with Kong's existing AI plugins
+## Approach
 
-`argus-redact-bridge` is **reversible**: the client receives the original PII restored. Kong's `ai-prompt-guard` (regex-based prompt blocking) and `ai-azure-content-safety` (Azure-hosted moderation) detect or block sensitive content but do not restore it. See [`benchmarks/prvl-vs-ai-prompt-guard/`](benchmarks/prvl-vs-ai-prompt-guard/README.md) for the methodology used to compare them.
+Most PII handling at the API gateway today falls into one of three patterns:
+
+1. **Block-and-reject** — detect sensitive content and refuse the request. Strong on privacy guarantee, no usability for the legitimate cases the regex flags.
+2. **Detect-and-strip** — replace PII with placeholders before the upstream call, do not restore. Usable, but the client sees pseudonyms and has to map them back manually.
+3. **Reversible redact-and-restore** — replace PII with realistic pseudonyms before the upstream call, restore the original PII on the response so the client sees a normal message. This is the pattern `argus-redact-bridge` implements.
+
+The reversible pattern is what makes a hosted LLM useful in PII-heavy workflows (customer-support chat, medical intake, identity verification): the upstream model never sees raw PII, and the human caller never has to decode pseudonyms. See [`benchmarks/prvl/`](benchmarks/prvl/README.md) for the methodology used to measure each pattern's privacy/reversibility/language coverage.
+
+## Performance
+
+End-to-end latency, measured against the demo stack (`docker compose up` → curl Kong with a 25-character Chinese PII payload, `mode=fast`, single user message). Numbers are illustrative — they include the full plugin path (request body parse, `POST /redact` HTTP round-trip to the local argus-redact sidecar, body inject, upstream call, response body buffer, local restore via key dict) and will vary with payload size, message count, network distance to the argus-redact sidecar, and host hardware.
+
+| Metric | Value (host: Apple M1 Max, Docker Desktop / N=100) |
+|---|---|
+| p50 latency | 6.6 ms |
+| p95 latency | 10.8 ms |
+| p99 latency | 17.0 ms |
+| throughput  | 42.4 req/s |
+
+Reproduce with `bash scripts/bench.sh` after `docker compose -f docker/docker-compose.yml up -d --build`.
+
+The plugin layers HTTP round-trips and JSON re-parsing on top of argus-redact's detection engine. Any single-millisecond latency claim from the underlying detection engine does not translate to plugin-level performance — measure end-to-end before quoting numbers.
 
 ## Status
 
