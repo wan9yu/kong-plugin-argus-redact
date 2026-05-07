@@ -6,7 +6,7 @@ local kong = kong
 local ngx = ngx
 
 local Plugin = {
-  PRIORITY = 1100, -- runs after Kong's body-aware request transformers, before ai-proxy (799)
+  PRIORITY = 1100, -- higher = earlier in access phase: runs before ai-proxy (799), after request-transformer-class plugins (900+)
   VERSION = "0.1.0",
 }
 
@@ -32,14 +32,20 @@ end
 
 function Plugin:access(conf)
   local body, err = kong.request.get_raw_body()
-  if not body or body == "" then
-    return  -- nothing to redact
+  if not body then
+    if err then
+      return fail(conf, 502, "failed to read request body: " .. err)
+    end
+    return  -- truly empty body; nothing to redact
+  end
+  if body == "" then
+    return  -- explicit empty; nothing to redact
   end
 
   local parsed, perr = codec.parse_request(body)
   if not parsed then
     -- not OpenAI-shape; let it through (not our problem)
-    kong.log.debug("argus-redact-bridge: skipping non-OpenAI body: " .. tostring(perr))
+    kong.log.debug("argus-redact-bridge: skipping non-OpenAI body: " .. perr)
     return
   end
 
@@ -91,13 +97,15 @@ function Plugin:body_filter(conf)
     return
   end
 
-  local httpc = http.new()
+  local httpc = http.new()  -- separate from access-phase httpc; pool reuse handled by resty.http
   local restored_list = {}
   for i, text in ipairs(parsed.texts) do
     local res, err = client.restore(httpc, conf, text, ctx.argus_key)
     if not res then
       kong.log.err("argus-redact /restore failed at choice " .. i .. ": " .. err
         .. " — returning redacted (still safe) text to client")
+      -- partial restore: return the fully-redacted body rather than a mix of
+      -- restored and pseudonym text, which would be harder for callers to handle
       ngx.arg[1] = full_body
       ngx.arg[2] = true
       return
