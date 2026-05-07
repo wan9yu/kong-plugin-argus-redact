@@ -112,18 +112,16 @@ For production, run `argus-redact serve` with `ARGUS_API_KEY` set (drop the `--i
 
 ## Performance
 
-End-to-end latency on the demo stack (Apple M1 Max + Docker Desktop, `mode=fast`, single 25-character Chinese PII payload, N=100):
+End-to-end latency on the demo stack, `mode=fast`, single 25-character Chinese PII payload, N=100 with 5-request warmup. Plugin steady-state overhead alone is ~0.5–0.8 ms at p50; the rows below are full-path numbers including the request-body parse, `POST /redact` to the sidecar, body inject, upstream mock-LLM call, response body buffer, and local restore.
 
-| Metric | Value |
-|---|---|
-| p50 latency | 6.6 ms |
-| p95 latency | 10.8 ms |
-| p99 latency | 17.0 ms |
-| throughput | 42.4 req/s |
+| Host | p50 | p95 | p99 | throughput |
+|---|---|---|---|---|
+| Linux aarch64 (Parallels VM, native Docker) | 1.8 ms | 2.6 ms | 42.4 ms | 196 req/s |
+| macOS (Apple M1 Max, Docker Desktop) | 6.6 ms | 10.8 ms | 17.0 ms | 42 req/s |
 
-Reproduce with `bash scripts/bench.sh` after `docker compose -f docker/docker-compose.yml up -d --build`. Numbers vary with payload size, message count, network distance to the sidecar, and host hardware.
+Reproduce with `bash scripts/bench.sh` after `docker compose -f docker/docker-compose.yml up -d --build`. Numbers vary with payload size, message count, network distance to the sidecar, and host hardware. Docker Desktop on macOS adds 3–5× hypervisor + bind-mount overhead vs. native Linux; production deployments on Linux nodes should expect the upper row, not the lower one.
 
-These are plugin-level numbers — they include the full path: request body parse, `POST /redact` HTTP round-trip to the local sidecar, body inject, upstream call, response body buffer, and local restore. The underlying detection engine's standalone benchmarks do not translate to plugin-level latency; measure end-to-end before quoting.
+**Cold-start tax.** Without warmup, the first few `/redact` calls after the argus-redact container starts can take 1–4 seconds (Python imports and regex compilation). Production deployments should warm the sidecar — a single dummy `/redact` call, or an initialization healthcheck that exercises the path — before serving traffic. v0.1 ships without an automated warmup hook. See [`benchmarks/vm-test-2026-05-07.md`](benchmarks/vm-test-2026-05-07.md) for the measured cold-start profile.
 
 ## Approach
 
