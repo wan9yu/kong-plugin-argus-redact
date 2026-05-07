@@ -1,0 +1,44 @@
+services:
+  argus-redact:
+    build:
+      context: ./argus-redact
+    environment:
+      ARGUS_API_KEY: ${ARGUS_API_KEY:-test-key}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mock-llm:
+    build:
+      context: ./mock-llm
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8080/healthz\").status==200 else 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kong:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong.yml
+      KONG_PLUGINS: bundled,argus-redact-bridge
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: info
+      ARGUS_API_KEY: ${ARGUS_API_KEY:-test-key}
+    volumes:
+      - ./kong.yml:/kong.yml:ro
+    ports:
+      - "18000:8000"
+    depends_on:
+      argus-redact:
+        condition: service_healthy
+      mock-llm:
+        condition: service_healthy
