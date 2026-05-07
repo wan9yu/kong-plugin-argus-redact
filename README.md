@@ -2,9 +2,10 @@
 
 > Kong Gateway plugin: redact PII before upstream LLM calls, restore it on the response — transparently.
 
+[![tests](https://github.com/wan9yu/kong-plugin-argus-redact/actions/workflows/test.yml/badge.svg)](https://github.com/wan9yu/kong-plugin-argus-redact/actions/workflows/test.yml)
+[![luarocks](https://img.shields.io/luarocks/v/wan9yu/argus-redact-bridge?label=luarocks)](https://luarocks.org/modules/wan9yu/argus-redact-bridge)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Kong Gateway](https://img.shields.io/badge/Kong_Gateway-3.x-blue.svg)](https://docs.konghq.com/gateway/)
-[![Status](https://img.shields.io/badge/status-v0.1_preview-orange.svg)](#status)
 
 ## 60-second demo
 

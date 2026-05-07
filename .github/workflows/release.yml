@@ -9,6 +9,8 @@ jobs:
   luarocks-upload:
     name: upload rockspec to luarocks.org
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required by softprops/action-gh-release to create the GitHub Release
     steps:
       - uses: actions/checkout@v4
 
@@ -49,3 +51,21 @@ jobs:
             exit 1
           fi
           luarocks upload "${{ steps.rockspec.outputs.name }}" --api-key="$LUAROCKS_KEY"
+
+      - name: create github release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            ```bash
+            luarocks install argus-redact-bridge
+            ```
+
+            ## Reference
+
+            - Configuration, architecture diagram, and `What it doesn't do` are in the [README](https://github.com/wan9yu/kong-plugin-argus-redact#readme).
+            - Live integration test record: [`benchmarks/vm-test-2026-05-07.md`](https://github.com/wan9yu/kong-plugin-argus-redact/blob/main/benchmarks/vm-test-2026-05-07.md).
