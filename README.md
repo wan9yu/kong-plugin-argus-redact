@@ -134,9 +134,15 @@ Three patterns dominate gateway-layer PII handling today:
 
 See [`benchmarks/prvl/`](benchmarks/prvl/README.md) for the privacy × reversibility × language methodology used to measure each pattern.
 
+## Distribution
+
+- **LuaRocks** — `luarocks install argus-redact-bridge` ([package page](https://luarocks.org/modules/wan9yu/argus-redact-bridge)).
+- **GitHub Releases** — [tagged release artifacts](https://github.com/wan9yu/kong-plugin-argus-redact/releases) (signed via `tag → CI → luarocks` workflow).
+- **Kong Plugin Hub submission** — opened **2026-05-07** at [Kong/developer.konghq.com#5157](https://github.com/Kong/developer.konghq.com/pull/5157) as a draft PR, alongside an explicit ask for guidance on the standard third-party onboarding path. Currently awaiting maintainer triage; this README will be updated when the submission's status changes.
+
 ## Status
 
-**v0.1 preview.** APIs may change. Not yet published to luarocks.org. Production users should pin to a tagged commit.
+**v0.1 preview.** APIs may change. Production users should pin to a tagged commit.
 
 ## License
 
