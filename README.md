@@ -138,7 +138,7 @@ See [`benchmarks/prvl/`](benchmarks/prvl/README.md) for the privacy × reversibi
 
 - **LuaRocks** — `luarocks install argus-redact-bridge` ([package page](https://luarocks.org/modules/wan9yu/argus-redact-bridge)).
 - **GitHub Releases** — [tagged release artifacts](https://github.com/wan9yu/kong-plugin-argus-redact/releases) (signed via `tag → CI → luarocks` workflow).
-- **Kong Plugin Hub submission** — opened **2026-05-07** at [Kong/developer.konghq.com#5157](https://github.com/Kong/developer.konghq.com/pull/5157) as a draft PR, alongside an explicit ask for guidance on the standard third-party onboarding path. Currently awaiting maintainer triage; this README will be updated when the submission's status changes.
+- **Kong Plugin Hub** — Per the maintainer response on [Kong/developer.konghq.com#5157](https://github.com/Kong/developer.konghq.com/pull/5157) (opened 2026-05-07, closed 2026-05-20), Kong's Plugin Hub currently accepts third-party plugins only via Kong's partner certification process, after which a Kong-staff-authored PR lands the docs. The PR is held closed until certification is in place. The PR conversation has the contact path for that process.
 
 ## Status
 
